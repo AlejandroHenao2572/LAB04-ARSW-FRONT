@@ -3,8 +3,6 @@ import { Client } from '@stomp/stompjs'
 
 const WS_URL = `${(import.meta.env.VITE_API_BASE ?? 'http://localhost:8080')
   .replace(/^http/, 'ws')}/ws-blueprints`
-//  http://localhost:8080  →  ws://localhost:8080/ws-blueprints
-//  https://mi-api.com     →  wss://mi-api.com/ws-blueprints
 
 // Fabrica del cliente STOMP
 // Devuelve un Client configurado pero SIN activar.

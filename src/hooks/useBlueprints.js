@@ -38,7 +38,7 @@ export function useBlueprints(author) {
 
   // Total de puntos del autor (derivado con reduce)
   // No se calcula en el componente: el hook expone el valor ya listo.
-  const totalPoints = blueprints.reduce((acc, bp) => acc + bp.pointCount, 0)
+  // totalPoints removed — not required anymore
 
   // Crear un nuevo plano
   // Después de crear, recarga la lista para que el panel se actualice.
@@ -53,5 +53,5 @@ export function useBlueprints(author) {
     await reload()
   }
 
-  return { blueprints, totalPoints, loading, error, reload, create, remove }
+  return { blueprints, loading, error, reload, create, remove }
 }

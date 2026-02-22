@@ -3,7 +3,7 @@
 // El usuario hace clic en una fila para seleccionar el plano activo.
 // El total de puntos se calcula con reduce DENTRO del hook useBlueprints;
 // aquí solo lo mostramos.
-export default function AuthorPanel({ blueprints, totalPoints, loading, error, selected, onSelect }) {
+export default function AuthorPanel({ blueprints, loading, error, selected, onSelect }) {
   if (loading) return <p style={styles.msg}>Cargando planos…</p>
   if (error)   return <p style={{ ...styles.msg, color: '#e53e3e' }}>Error: {error}</p>
   if (!blueprints.length) return <p style={styles.msg}>Sin planos para este autor.</p>
@@ -14,7 +14,6 @@ export default function AuthorPanel({ blueprints, totalPoints, loading, error, s
         <thead>
           <tr>
             <th style={styles.th}>Nombre del plano</th>
-            <th style={styles.th}>Puntos</th>
           </tr>
         </thead>
         <tbody>
@@ -29,18 +28,10 @@ export default function AuthorPanel({ blueprints, totalPoints, loading, error, s
               }}
             >
               <td style={styles.td}>{bp.name}</td>
-              <td style={{ ...styles.td, textAlign: 'center' }}>{bp.pointCount}</td>
             </tr>
           ))}
         </tbody>
-        <tfoot>
-          <tr>
-            <td style={{ ...styles.td, fontWeight: 700 }}>Total</td>
-            <td style={{ ...styles.td, textAlign: 'center', fontWeight: 700 }}>
-              {totalPoints}
-            </td>
-          </tr>
-        </tfoot>
+
       </table>
     </div>
   )

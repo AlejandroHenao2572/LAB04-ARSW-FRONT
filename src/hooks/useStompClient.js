@@ -8,29 +8,36 @@ import { createStompClient } from '../lib/stompClient.js'
 // Expone { client, ready } donde:
 //   client → la instancia de Client
 //   ready  → boolean: true solo cuando onConnect disparó (el broker confirmó la sesión)
-export function useStompClient() {
+// Permite activar/desactivar la conexión STOMP desde el consumidor.
+// Cuando `enabled` es false no se crea ni activa el cliente.
+export function useStompClient(enabled = true) {
   const clientRef = useRef(null)
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
+    if (!enabled) {
+      // Si había un cliente activo, ciérralo
+      if (clientRef.current) {
+        try { clientRef.current.deactivate() } catch (e) { /* ignore */ }
+        clientRef.current = null
+      }
+      setReady(false)
+      return
+    }
+
     const stompClient = createStompClient()
 
-    stompClient.onConnect = () => {
-      setReady(true)
-    }
+    stompClient.onConnect = () => setReady(true)
+    stompClient.onDisconnect = () => setReady(false)
 
-    stompClient.onDisconnect = () => {
-      setReady(false)
-    }
-
-    stompClient.activate()          // Abre el WebSocket y negocia el handshake STOMP
+    stompClient.activate()
     clientRef.current = stompClient
 
     return () => {
-      stompClient.deactivate()      // Cierra limpiamente al desmontar el componente raíz
+      try { stompClient.deactivate() } catch (e) { /* ignore */ }
       setReady(false)
     }
-  }, [])                            // Sin dependencias: se ejecuta solo una vez
+  }, [enabled])
 
   return { client: clientRef.current, ready }
 }

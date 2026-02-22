@@ -15,6 +15,7 @@ import ActionBar           from './components/ActionBar.jsx'
 
 export default function App() {
   // ── Estado de UI ──────────────────────────────────────────────────────────
+  const [tech, setTech]         = useState('stomp')  // 'stomp' | 'socketio'
   const [author, setAuthor]     = useState('juan')   // quién está dibujando
   const [draftAuthor, setDraft] = useState('juan')   // valor del input antes de confirmar
   const [selected, setSelected] = useState(null)     // nombre del plano activo en el canvas
@@ -22,12 +23,12 @@ export default function App() {
   // ── Capa STOMP (singleton) ────────────────────────────────────────────────
   // El cliente se crea una vez al montar App y se destruye al desmontar.
   // `ready` es true solo cuando el broker confirmó la sesión STOMP.
-  const { client, ready } = useStompClient()
+  const { client, ready } = useStompClient(tech === 'stomp')
 
   // ── Panel de autor ────────────────────────────────────────────────────────
   // Se recarga automáticamente cada vez que `author` cambia.
   const {
-    blueprints, totalPoints, loading, error,
+    blueprints, loading, error,
     reload: reloadList, create, remove,
   } = useBlueprints(author)
 
@@ -70,6 +71,12 @@ export default function App() {
 
       {/* ── Selector de autor ── */}
       <form onSubmit={handleAuthorSubmit} style={styles.form}>
+        <label style={styles.label}>Tecnología:</label>
+        <select value={tech} onChange={e => setTech(e.target.value)} style={styles.select}>
+          <option value="stomp">STOMP</option>
+          <option value="socketio">Socket.IO </option>
+        </select>
+
         <label style={styles.label}>Autor:</label>
         <input
           value={draftAuthor}
@@ -79,16 +86,15 @@ export default function App() {
         />
         <button type="submit" style={styles.submitBtn}>Cargar</button>
         <span style={styles.badge}>
-          {ready
-            ? '🟢 STOMP conectado'
-            : '🔴 STOMP desconectado'}
+          {tech === 'stomp'
+            ? (ready ? 'STOMP conectado' : 'STOMP desconectado')
+            : 'Socket.IO backend no disponible'}
         </span>
       </form>
 
       {/* ── Panel de autor: tabla de planos + total ── */}
       <AuthorPanel
         blueprints={blueprints}
-        totalPoints={totalPoints}
         loading={loading}
         error={error}
         selected={selected}
@@ -107,8 +113,14 @@ export default function App() {
       <Canvas
         points={points}
         onDraw={sendPoint}
-        disabled={!selected || !ready}
+        disabled={!selected || (tech === 'stomp' ? !ready : true)}
       />
+
+      {tech === 'socketio' && (
+        <p style={{ color: '#b7791f', marginTop: 8 }}>
+          Socket.IO no está implementado en el backend todavía. Selecciona STOMP para probar la sincronización en tiempo real.
+        </p>
+      )}
 
       {!selected && (
         <p style={styles.hint}>
@@ -124,6 +136,7 @@ const styles = {
   title:     { margin: '0 0 16px', color: '#2d3748' },
   form:      { display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' },
   label:     { fontWeight: 600, color: '#4a5568' },
+  select:    { padding: '6px 10px', border: '1px solid #cbd5e0', borderRadius: 6, fontSize: 14 },
   input:     { padding: '6px 10px', border: '1px solid #cbd5e0', borderRadius: 6, fontSize: 14 },
   submitBtn: { padding: '6px 14px', background: '#667eea', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600 },
   badge:     { fontSize: 13, color: '#4a5568', marginLeft: 8 },

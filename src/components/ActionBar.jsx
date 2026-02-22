@@ -43,7 +43,7 @@ export default function ActionBar({ selected, onCreate, onReload, onDelete }) {
         onClick={onReload}
         disabled={!selected}
       >
-        ↺ Sincronizar
+        ✓ Guardar
       </button>
 
       {/* ── Delete ── */}
