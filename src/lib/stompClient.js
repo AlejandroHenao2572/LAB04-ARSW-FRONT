@@ -1,20 +1,47 @@
+// src/lib/stompClient.js
 import { Client } from '@stomp/stompjs'
-// import SockJS from 'sockjs-client' // si quieres fallback
 
-export function createStompClient(baseUrl) {
-  const client = new Client({
-    brokerURL: `${baseUrl.replace(/\/$/,'')}/ws-blueprints`,
-    // webSocketFactory: () => new SockJS(`${baseUrl}/ws-blueprints`),
-    reconnectDelay: 1000,
+const WS_URL = `${(import.meta.env.VITE_API_BASE ?? 'http://localhost:8080')
+  .replace(/^http/, 'ws')}/ws-blueprints`
+//  http://localhost:8080  →  ws://localhost:8080/ws-blueprints
+//  https://mi-api.com     →  wss://mi-api.com/ws-blueprints
+
+// Fabrica del cliente STOMP
+// Devuelve un Client configurado pero SIN activar.
+// La activación (client.activate()) la controla el hook useStompClient.
+export function createStompClient() {
+  return new Client({
+    brokerURL:         WS_URL,
+    reconnectDelay:    3000,
     heartbeatIncoming: 10000,
     heartbeatOutgoing: 10000,
-    onStompError: (f) => console.error('STOMP error', f.headers['message']),
+    onStompError: (frame) => {
+      console.error('[STOMP] Error:', frame.headers['message'])
+    },
   })
-  return client
 }
 
-export function subscribeBlueprint(client, author, name, onMsg) {
-  return client.subscribe(`/topic/blueprints.${author}.${name}`, (m) => {
-    onMsg(JSON.parse(m.body))
+// Suscripción a un plano específico 
+// Retorna el objeto Subscription. Para cancelar: subscription.unsubscribe()
+// onMessage recibe el Blueprint completo (ya parseado) que llegó del broker.
+export function subscribeToBlueprint(client, author, name, onMessage) {
+  const topic = `/topic/blueprints.${author}.${name}`
+  return client.subscribe(topic, (frame) => {
+    const blueprint = JSON.parse(frame.body)
+    onMessage(blueprint)
+  })
+}
+
+// Publicación de un punto nuevo
+// El cliente envía al broker en /app/draw.
+// Spring Boot lo recibe en @MessageMapping("/draw") y lo redistribuye.
+export function publishPoint(client, author, name, point) {
+  if (!client.connected) {
+    console.warn('[STOMP] Intento de publicar sin conexión activa')
+    return
+  }
+  client.publish({
+    destination: '/app/draw',
+    body: JSON.stringify({ author, name, point }),
   })
 }
