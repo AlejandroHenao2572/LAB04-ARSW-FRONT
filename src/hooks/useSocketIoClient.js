@@ -34,7 +34,7 @@ export function useSocketIoClient(enabled = true) {
     const socket = createSocketIoClient()
     socketRef.current = socket
 
-    // ── Connection state listeners ────────────────────────────────────────
+    //  Connection state listeners 
     const onConnect    = () => setConnected(true)
     const onDisconnect = () => setConnected(false)
     const onError      = (err) => console.error('[socket.io] Server error:', err?.message)
@@ -45,7 +45,7 @@ export function useSocketIoClient(enabled = true) {
     socket.on('error',      onError)
     socket.on('warning',    onWarning)
 
-    // ── Cleanup on disable or unmount ─────────────────────────────────────
+    //  Cleanup on disable or unmount 
     return () => {
       socket.off('connect',    onConnect)
       socket.off('disconnect', onDisconnect)
