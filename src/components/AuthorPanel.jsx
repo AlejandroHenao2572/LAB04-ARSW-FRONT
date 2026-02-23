@@ -1,9 +1,8 @@
 // src/components/AuthorPanel.jsx
 // Tabla que muestra todos los planos de un autor.
 // El usuario hace clic en una fila para seleccionar el plano activo.
-// El total de puntos se calcula con reduce DENTRO del hook useBlueprints;
-// aquí solo lo mostramos.
-export default function AuthorPanel({ blueprints, loading, error, selected, onSelect }) {
+// El total de puntos viene calculado con reduce desde useBlueprints; aquí solo lo mostramos.
+export default function AuthorPanel({ blueprints, totalPoints, loading, error, selected, onSelect }) {
   if (loading) return <p style={styles.msg}>Cargando planos…</p>
   if (error)   return <p style={{ ...styles.msg, color: '#e53e3e' }}>Error: {error}</p>
   if (!blueprints.length) return <p style={styles.msg}>Sin planos para este autor.</p>
@@ -14,6 +13,7 @@ export default function AuthorPanel({ blueprints, loading, error, selected, onSe
         <thead>
           <tr>
             <th style={styles.th}>Nombre del plano</th>
+            <th style={{ ...styles.th, textAlign: 'right' }}>Puntos</th>
           </tr>
         </thead>
         <tbody>
@@ -28,9 +28,16 @@ export default function AuthorPanel({ blueprints, loading, error, selected, onSe
               }}
             >
               <td style={styles.td}>{bp.name}</td>
+              <td style={{ ...styles.td, textAlign: 'right' }}>{bp.pointCount ?? 0}</td>
             </tr>
           ))}
         </tbody>
+        <tfoot>
+          <tr style={styles.footRow}>
+            <td style={{ ...styles.td, fontWeight: 700 }}>Total</td>
+            <td style={{ ...styles.td, textAlign: 'right', fontWeight: 700 }}>{totalPoints}</td>
+          </tr>
+        </tfoot>
 
       </table>
     </div>
@@ -38,10 +45,11 @@ export default function AuthorPanel({ blueprints, loading, error, selected, onSe
 }
 
 const styles = {
-  wrapper: { overflowX: 'auto', marginBottom: 12 },
-  table:   { width: '100%', borderCollapse: 'collapse', fontSize: 14 },
-  th:      { padding: '6px 12px', background: '#2d3748', color: '#fff', textAlign: 'left' },
-  tr:      { cursor: 'pointer', borderBottom: '1px solid #e2e8f0', transition: 'background .15s' },
-  td:      { padding: '6px 12px' },
-  msg:     { color: '#718096', fontStyle: 'italic' },
+  wrapper:  { overflowX: 'auto', marginBottom: 12 },
+  table:    { width: '100%', borderCollapse: 'collapse', fontSize: 14 },
+  th:       { padding: '6px 12px', background: '#2d3748', color: '#fff', textAlign: 'left' },
+  tr:       { cursor: 'pointer', borderBottom: '1px solid #e2e8f0', transition: 'background .15s' },
+  td:       { padding: '6px 12px' },
+  footRow:  { borderTop: '2px solid #2d3748', background: '#edf2f7' },
+  msg:      { color: '#718096', fontStyle: 'italic' },
 }

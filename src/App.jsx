@@ -1,43 +1,57 @@
-// src/App.jsx  — Orquestador principal (Fase 4)
-//
-// Responsabilidades:
-//   1. Instanciar el cliente STOMP una sola vez (useStompClient)
-//   2. Mantener el estado de UI: autor activo, plano seleccionado
-//   3. Propagar autor y plano a useBlueprints y useCanvas
-//   4. Conectar los callbacks de ActionBar con las funciones de los hooks
-import { useState } from 'react'
-import { useStompClient }  from './hooks/useStompClient.js'
-import { useBlueprints }   from './hooks/useBlueprints.js'
-import { useCanvas }       from './hooks/useCanvas.js'
-import AuthorPanel         from './components/AuthorPanel.jsx'
-import Canvas              from './components/Canvas.jsx'
-import ActionBar           from './components/ActionBar.jsx'
+/**
+ * src/App.jsx — Orquestador principal
+ *
+ * Responsabilidades:
+ *   1. Instanciar el cliente STOMP (useStompClient) Y el socket Socket.IO
+ *      (useSocketIoClient), cada uno solo cuando está activo.
+ *   2. Mantener el estado de UI: modo de transporte, autor activo, plano seleccionado.
+ *   3. Propagar el descriptor de transporte unificado a useCanvas.
+ *   4. Conectar los callbacks de ActionBar con las funciones de los hooks.
+ */
+import { useState }            from 'react'
+import { useStompClient }      from './hooks/useStompClient.js'
+import { useSocketIoClient }   from './hooks/useSocketIoClient.js'
+import { useBlueprints }       from './hooks/useBlueprints.js'
+import { useCanvas }           from './hooks/useCanvas.js'
+import AuthorPanel             from './components/AuthorPanel.jsx'
+import Canvas                  from './components/Canvas.jsx'
+import ActionBar               from './components/ActionBar.jsx'
 
 export default function App() {
-  // ── Estado de UI ──────────────────────────────────────────────────────────
+  //  Estado de UI 
   const [tech, setTech]         = useState('stomp')  // 'stomp' | 'socketio'
   const [author, setAuthor]     = useState('juan')   // quién está dibujando
   const [draftAuthor, setDraft] = useState('juan')   // valor del input antes de confirmar
   const [selected, setSelected] = useState(null)     // nombre del plano activo en el canvas
 
-  // ── Capa STOMP (singleton) ────────────────────────────────────────────────
-  // El cliente se crea una vez al montar App y se destruye al desmontar.
-  // `ready` es true solo cuando el broker confirmó la sesión STOMP.
+  //  STOMP client (singleton, solo activo cuando tech === 'stomp') 
+  // `ready` es true solo cuando el broker confirmó la sesión.
   const { client, ready } = useStompClient(tech === 'stomp')
 
-  // ── Panel de autor ────────────────────────────────────────────────────────
+  // ── Socket.IO client (singleton, solo activo cuando tech === 'socketio') ──
+  // `connected` es true solo tras el evento 'connect' del gateway Node.js.
+  const { socket, connected } = useSocketIoClient(tech === 'socketio')
+
+  //  Panel de autor 
   // Se recarga automáticamente cada vez que `author` cambia.
   const {
-    blueprints, loading, error,
+    blueprints, totalPoints, loading, error,
     reload: reloadList, create, remove,
   } = useBlueprints(author)
 
-  // ── Canvas + STOMP ────────────────────────────────────────────────────────
-  // `points` es el estado canónico del lienzo (sincronizado con el broker).
-  // `sendPoint` publica el clic al broker; el canvas solo se redibuja al recibir el eco.
-  const { points, sendPoint } = useCanvas(client, ready, author, selected)
+  // ── Canvas con transporte unificado 
+  // useCanvas decide internamente qué ruta usar según `mode`.
+  // `sendPoint` publica el clic; el canvas solo se redibuja al recibir el eco del servidor.
+  const { points, sendPoint } = useCanvas(
+    { mode: tech, client, ready, socket, connected },
+    author,
+    selected
+  )
 
-  // ── Handlers de ActionBar ─────────────────────────────────────────────────
+  // true cuando el transporte activo está listo para enviar/recibir
+  const isConnected = tech === 'stomp' ? ready : connected
+
+  //  Handlers de ActionBar 
   async function handleCreate(name) {
     await create(name)         // POST → crea el plano vacío
     setSelected(name)          // lo selecciona automáticamente
@@ -49,21 +63,21 @@ export default function App() {
   }
 
   function handleReload() {
-    // Fuerza re-mount de useCanvas cambiando brevemente `selected`.
-    // Esto dispara el useEffect de useCanvas que recarga via REST.
-    // Técnica: toggling a null y de vuelta en el mismo tick NO funciona en React;
-    // en su lugar, el hook useCanvas ya expone la recarga implícitamente
-    // cada vez que `selected` no cambia pero `ready` cambia.
-    // La forma más simple: recargar la lista del panel y mantener el plano.
     reloadList()
   }
 
-  // ── Cambio de autor ───────────────────────────────────────────────────────
+  //  Cambio de autor 
   function handleAuthorSubmit(e) {
     e.preventDefault()
     setAuthor(draftAuthor.trim())
-    setSelected(null)          // limpia el plano activo al cambiar de autor
+    setSelected(null)           // limpia el plano activo al cambiar de autor
   }
+
+  //  Derived UI state 
+  const statusLabel = tech === 'stomp'
+    ? (ready     ? 'STOMP conectado'      : 'STOMP desconectado')
+    : (connected ? 'Socket.IO conectado'  : 'Socket.IO desconectado')
+  const statusColor = isConnected ? '#276749' : '#c05621'
 
   return (
     <div style={styles.page}>
@@ -72,9 +86,13 @@ export default function App() {
       {/* ── Selector de autor ── */}
       <form onSubmit={handleAuthorSubmit} style={styles.form}>
         <label style={styles.label}>Tecnología:</label>
-        <select value={tech} onChange={e => setTech(e.target.value)} style={styles.select}>
-          <option value="stomp">STOMP</option>
-          <option value="socketio">Socket.IO </option>
+        <select
+          value={tech}
+          onChange={e => { setTech(e.target.value); setSelected(null) }}
+          style={styles.select}
+        >
+          <option value="stomp">STOMP (Spring Boot)</option>
+          <option value="socketio">Socket.IO (Node.js gateway)</option>
         </select>
 
         <label style={styles.label}>Autor:</label>
@@ -85,23 +103,20 @@ export default function App() {
           style={styles.input}
         />
         <button type="submit" style={styles.submitBtn}>Cargar</button>
-        <span style={styles.badge}>
-          {tech === 'stomp'
-            ? (ready ? 'STOMP conectado' : 'STOMP desconectado')
-            : 'Socket.IO backend no disponible'}
-        </span>
+        <span style={{ ...styles.badge, color: statusColor }}>{statusLabel}</span>
       </form>
 
-      {/* ── Panel de autor: tabla de planos + total ── */}
+      {/*  Panel de autor: tabla de planos + total  */}
       <AuthorPanel
         blueprints={blueprints}
+        totalPoints={totalPoints}
         loading={loading}
         error={error}
         selected={selected}
         onSelect={setSelected}
       />
 
-      {/* ── Barra de acciones CRUD ── */}
+      {/*  Barra de acciones CRUD  */}
       <ActionBar
         selected={selected}
         onCreate={handleCreate}
@@ -109,18 +124,12 @@ export default function App() {
         onDelete={handleDelete}
       />
 
-      {/* ── Lienzo de dibujo ── */}
+      {/*  Lienzo de dibujo  */}
       <Canvas
         points={points}
         onDraw={sendPoint}
-        disabled={!selected || (tech === 'stomp' ? !ready : true)}
+        disabled={!selected || !isConnected}
       />
-
-      {tech === 'socketio' && (
-        <p style={{ color: '#b7791f', marginTop: 8 }}>
-          Socket.IO no está implementado en el backend todavía. Selecciona STOMP para probar la sincronización en tiempo real.
-        </p>
-      )}
 
       {!selected && (
         <p style={styles.hint}>
@@ -139,6 +148,6 @@ const styles = {
   select:    { padding: '6px 10px', border: '1px solid #cbd5e0', borderRadius: 6, fontSize: 14 },
   input:     { padding: '6px 10px', border: '1px solid #cbd5e0', borderRadius: 6, fontSize: 14 },
   submitBtn: { padding: '6px 14px', background: '#667eea', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600 },
-  badge:     { fontSize: 13, color: '#4a5568', marginLeft: 8 },
+  badge:     { fontSize: 13, marginLeft: 8, fontWeight: 600 },
   hint:      { color: '#718096', fontStyle: 'italic', marginTop: 12 },
 }

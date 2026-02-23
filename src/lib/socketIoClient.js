@@ -1,46 +1,87 @@
-import { Client } from '@stomp/stompjs'
+import { io } from 'socket.io-client'
 
-const WS_URL = `${(import.meta.env.VITE_STOMP_BASE ?? 'http://localhost:8080')
-  .replace(/^http/, 'ws')}/ws-blueprints`
-//  http://localhost:8080  →  ws://localhost:8080/ws-blueprints
+/** URL of the Node.js Socket.IO gateway */
+const GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL ?? 'http://localhost:3000'
 
-// Fábrica del cliente STOMP 
-// Devuelve un Client configurado pero SIN activar.
-// La activación (client.activate()) la controla el hook useStompClient.
-export function createStompClient() {
-  return new Client({
-    brokerURL:         WS_URL,
-    reconnectDelay:    3000,      // reintenta si se cae la conexión
-    heartbeatIncoming: 10000,     // el broker le manda un ping cada 10 s
-    heartbeatOutgoing: 10000,     // el cliente le manda un ping al broker cada 10 s
-    onStompError: (frame) => {
-      console.error('[STOMP] Error:', frame.headers['message'])
-    },
-  })
-}
 
-// Suscripción a un plano específico
-// Retorna el objeto Subscription. Para cancelar: subscription.unsubscribe()
-// onMessage recibe el Blueprint completo (ya parseado) que llegó del broker.
-export function subscribeToBlueprint(client, author, name, onMessage) {
-  const topic = `/topic/blueprints.${author}.${name}`
-  return client.subscribe(topic, (frame) => {
-    const blueprint = JSON.parse(frame.body)
-    onMessage(blueprint)
+/**
+ * Creates a Socket.IO client connected to the gateway.
+ * The socket auto-connects; call socket.disconnect() to close it.
+ *
+ * @returns {import('socket.io-client').Socket}
+ */
+export function createSocketIoClient() {
+  return io(GATEWAY_URL, {
+    transports:          ['websocket', 'polling'], // prefer WebSocket, fall back to polling
+    autoConnect:         true,
+    reconnection:        true,
+    reconnectionDelay:   2000,
+    reconnectionAttempts: Infinity,
   })
 }
 
 
-// Publicación de un punto nuevo 
-// El cliente envía al broker en /app/draw.
-// Spring Boot lo recibe en @MessageMapping("/draw") y lo redistribuye.
-export function publishPoint(client, author, name, point) {
-  if (!client.connected) {
-    console.warn('[STOMP] Intento de publicar sin conexión activa')
-    return
-  }
-  client.publish({
-    destination: '/app/draw',
-    body: JSON.stringify({ author, name, point }),
+/**
+ * Joins the collaboration room for a specific blueprint.
+ * The gateway will respond with an initial `blueprint-update` event containing
+ * the current persisted state.
+ *
+ * @param {import('socket.io-client').Socket} socket
+ * @param {string} author
+ * @param {string} name
+ */
+export function joinRoom(socket, author, name) {
+  socket.emit('join-room', { author, name })
+}
+
+/**
+ * Leaves the collaboration room cleanly.
+ * Call this before switching to a different blueprint.
+ *
+ * @param {import('socket.io-client').Socket} socket
+ * @param {string} author
+ * @param {string} name
+ */
+export function leaveRoom(socket, author, name) {
+  socket.emit('leave-room', { author, name })
+}
+
+
+/**
+ * Subscribes to `blueprint-update` events broadcast by the gateway.
+ * Returns an unsubscribe function – call it to remove the listener.
+ *
+ * @param {import('socket.io-client').Socket} socket
+ * @param {(blueprint: object) => void} onUpdate
+ * @returns {() => void} unsubscribe function
+ */
+export function subscribeBlueprintUpdate(socket, onUpdate) {
+  socket.on('blueprint-update', onUpdate)
+  return () => socket.off('blueprint-update', onUpdate)
+}
+
+
+/**
+ * Publishes a draw event to the gateway.
+ *
+ * Flow (handled server-side):
+ *   1. Gateway persists the point via Spring Boot REST (PUT …/points)
+ *   2. Gateway fetches the updated blueprint (GET …)
+ *   3. Gateway broadcasts `blueprint-update` to every OTHER client in the room
+ *
+ * Uses the Socket.IO acknowledgement mechanism so callers can detect failures.
+ *
+ * @param {import('socket.io-client').Socket} socket
+ * @param {string} author
+ * @param {string} name
+ * @param {{ x: number, y: number }} point
+ * @returns {Promise<{ ok: boolean, message?: string }>}
+ */
+export function sendDrawEvent(socket, author, name, point) {
+  return new Promise((resolve) => {
+    socket.emit('draw-event', { author, name, point }, (ack) => {
+      // ack is the callback argument sent by the gateway (optional)
+      resolve(ack ?? { ok: true })
+    })
   })
 }

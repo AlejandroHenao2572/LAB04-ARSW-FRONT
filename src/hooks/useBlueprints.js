@@ -36,9 +36,9 @@ export function useBlueprints(author) {
   // Recarga automatica cada vez que cambia el autor
   useEffect(() => { reload() }, [reload])
 
-  // Total de puntos del autor (derivado con reduce)
-  // No se calcula en el componente: el hook expone el valor ya listo.
-  // totalPoints removed — not required anymore
+  // Total de puntos del autor (derivado con reduce sobre pointCount de cada plano).
+  // Se recalcula automáticamente cada vez que cambia `blueprints`.
+  const totalPoints = blueprints.reduce((sum, bp) => sum + (bp.pointCount ?? 0), 0)
 
   // Crear un nuevo plano
   // Después de crear, recarga la lista para que el panel se actualice.
@@ -53,5 +53,5 @@ export function useBlueprints(author) {
     await reload()
   }
 
-  return { blueprints, loading, error, reload, create, remove }
+  return { blueprints, totalPoints, loading, error, reload, create, remove }
 }

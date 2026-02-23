@@ -1,66 +1,102 @@
-// src/hooks/useCanvas.js
 import { useEffect, useRef, useState } from 'react'
-import { getBlueprint } from '../lib/blueprintApi.js'
-import { subscribeToBlueprint, publishPoint } from '../lib/stompClient.js'
+import { getBlueprint }                        from '../lib/blueprintApi.js'
+import { subscribeToBlueprint, publishPoint }  from '../lib/stompClient.js'
+import {
+  joinRoom,
+  leaveRoom,
+  subscribeBlueprintUpdate,
+  sendDrawEvent,
+} from '../lib/socketIoClient.js'
 
-// Recibe el cliente STOMP ya creado (viene de useStompClient en App.jsx)
-// Gestiona:
-//   - Carga inicial de puntos via REST
-//   - Suscripción dinámica al topic del plano activo
-//   - Función sendPoint para que Canvas la llame al hacer clic
-export function useCanvas(client, ready, author, name) {
+export function useCanvas({ mode, client, ready, socket, connected }, author, name) {
   const [points, setPoints] = useState([])
+
+  // STOMP: holds the Subscription object ({ unsubscribe() })
+  // Socket.IO: holds the unsubscribe function returned by subscribeBlueprintUpdate
   const subscriptionRef = useRef(null)
-  const loadIdRef       = useRef(0)          // Guarda contra respuestas REST tardías
+  const loadIdRef       = useRef(0)          // guards against stale REST responses
 
-  // Carga inicial + re-suscripción cuando cambia autor/nombre
   useEffect(() => {
-    if (!author || !name) return
+    if (!author || !name) {
+      setPoints([])
+      return
+    }
 
-    // 1. Cancela la suscripción STOMP del plano anterior
-    subscriptionRef.current?.unsubscribe()
+    // ── 1. Cancel previous subscription ───────────────────────────────────
+    _cleanup(subscriptionRef.current)
     subscriptionRef.current = null
-
-    // 2. Limpia el canvas mientras carga
     setPoints([])
 
-    // 3. Genera un ID de carga para detectar respuestas stale
+    // ── 2. Load initial state via REST ─────────────────────────────────────
     const currentLoadId = ++loadIdRef.current
-
-    // 4. Carga REST del estado inicial (puntos ya persistidos)
     getBlueprint(author, name)
       .then((bp) => {
-        if (loadIdRef.current !== currentLoadId) return  // respuesta stale → descarta
+        if (loadIdRef.current !== currentLoadId) return   // stale → discard
         setPoints(bp.points ?? [])
       })
       .catch(console.error)
 
-    // 5. Se suscribe al topic STOMP solo si ya hay conexión activa
-    if (ready && client) {
+    // ── 3. Subscribe to real-time updates ─────────────────────────────────
+    if (mode === 'stomp' && ready && client) {
+      // STOMP: returns a Subscription with .unsubscribe()
       subscriptionRef.current = subscribeToBlueprint(
-        client,
-        author,
-        name,
-        (bp) => {
-          // El broker envía el Blueprint completo actualizado.
-          // Reemplazamos los puntos con la versión del servidor (fuente de verdad).
-          setPoints(bp.points ?? [])
-        }
+        client, author, name,
+        (bp) => setPoints(bp.points ?? [])
+      )
+    } else if (mode === 'socketio' && connected && socket) {
+      // Socket.IO: join the gateway room, then listen to broadcasts
+      joinRoom(socket, author, name)
+
+      // The gateway also sends blueprint-update on join-room (initial state).
+      // We use it to override the REST load with the freshest server state.
+      subscriptionRef.current = subscribeBlueprintUpdate(
+        socket,
+        (bp) => setPoints(bp.points ?? [])
       )
     }
 
+    // ── 4. Cleanup on effect re-run or unmount ─────────────────────────────
     return () => {
-      subscriptionRef.current?.unsubscribe()
+      _cleanup(subscriptionRef.current)
       subscriptionRef.current = null
-    }
-  }, [client, ready, author, name])
 
-  // Envío de un punto al hacer clic en el canvas
-  // NO dibuja localmente: espera el eco del broker para actualizar el estado.
+      if (mode === 'socketio' && socket && connected) {
+        leaveRoom(socket, author, name)
+      }
+    }
+  }, [mode, client, ready, socket, connected, author, name])
+
+  // ── Send a point through the active transport ──────────────────────────────
+  // The canvas is NOT updated optimistically; we wait for the server echo.
   function sendPoint(x, y) {
-    if (!ready || !client) return
-    publishPoint(client, author, name, { x, y })
+    if (mode === 'stomp') {
+      if (!ready || !client) return
+      publishPoint(client, author, name, { x, y })
+
+    } else if (mode === 'socketio') {
+      if (!connected || !socket) return
+      sendDrawEvent(socket, author, name, { x, y })
+        .then((ack) => {
+          if (!ack?.ok) console.warn('[canvas] draw-event rejected by gateway:', ack?.message)
+        })
+        .catch((err) => console.error('[canvas] draw-event error:', err))
+    }
   }
 
   return { points, sendPoint }
+}
+
+// ── Internal helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Calls the appropriate teardown for either a STOMP Subscription object
+ * or a plain unsubscribe function (Socket.IO).
+ */
+function _cleanup(sub) {
+  if (!sub) return
+  if (typeof sub === 'function') {
+    sub()                  // Socket.IO: () => socket.off(...)
+  } else {
+    sub.unsubscribe?.()    // STOMP: Subscription.unsubscribe()
+  }
 }
