@@ -54,13 +54,6 @@ export default function ActionBar({ selected, onCreate, onReload, onDelete }) {
       >
         ✕ Eliminar
       </button>
-
-      {selected && (
-        <span style={styles.hint}>
-          Plano activo: <strong>{selected}</strong>
-          {' '}— cada clic se guarda en tiempo real via STOMP
-        </span>
-      )}
     </div>
   )
 }

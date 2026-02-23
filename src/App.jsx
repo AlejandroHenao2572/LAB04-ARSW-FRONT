@@ -92,7 +92,7 @@ export default function App() {
           style={styles.select}
         >
           <option value="stomp">STOMP (Spring Boot)</option>
-          <option value="socketio">Socket.IO (Node.js gateway)</option>
+          <option value="socketio">Socket.IO (Node.js)</option>
         </select>
 
         <label style={styles.label}>Autor:</label>

@@ -22,12 +22,12 @@ export function useCanvas({ mode, client, ready, socket, connected }, author, na
       return
     }
 
-    // ── 1. Cancel previous subscription ───────────────────────────────────
+    //  1. Cancel previous subscription 
     _cleanup(subscriptionRef.current)
     subscriptionRef.current = null
     setPoints([])
 
-    // ── 2. Load initial state via REST ─────────────────────────────────────
+    //  2. Load initial state via REST 
     const currentLoadId = ++loadIdRef.current
     getBlueprint(author, name)
       .then((bp) => {
@@ -36,7 +36,7 @@ export function useCanvas({ mode, client, ready, socket, connected }, author, na
       })
       .catch(console.error)
 
-    // ── 3. Subscribe to real-time updates ─────────────────────────────────
+    //  3. Subscribe to real-time updates 
     if (mode === 'stomp' && ready && client) {
       // STOMP: returns a Subscription with .unsubscribe()
       subscriptionRef.current = subscribeToBlueprint(
@@ -55,7 +55,7 @@ export function useCanvas({ mode, client, ready, socket, connected }, author, na
       )
     }
 
-    // ── 4. Cleanup on effect re-run or unmount ─────────────────────────────
+    //  4. Cleanup on effect re-run or unmount 
     return () => {
       _cleanup(subscriptionRef.current)
       subscriptionRef.current = null
@@ -66,7 +66,7 @@ export function useCanvas({ mode, client, ready, socket, connected }, author, na
     }
   }, [mode, client, ready, socket, connected, author, name])
 
-  // ── Send a point through the active transport ──────────────────────────────
+  //  Send a point through the active transport 
   // The canvas is NOT updated optimistically; we wait for the server echo.
   function sendPoint(x, y) {
     if (mode === 'stomp') {
@@ -86,7 +86,7 @@ export function useCanvas({ mode, client, ready, socket, connected }, author, na
   return { points, sendPoint }
 }
 
-// ── Internal helpers ───────────────────────────────────────────────────────────
+//  Internal helpers 
 
 /**
  * Calls the appropriate teardown for either a STOMP Subscription object

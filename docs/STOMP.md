@@ -82,132 +82,36 @@ function publishPoint(client, author, name, point) {
 
 ## Integración con `useCanvas`
 
-`useCanvas` combina REST para carga inicial y STOMP para la sincronización en tiempo real. A continuación se muestra el fragmento real usado en la implementación (comentarios en español):
+- `useCanvas` realiza:
+  - Carga inicial por REST (`GET /api/v1/blueprints/{author}/{name}`) y setPoints con puntos persistidos.
+  - Suscripción STOMP cuando `client` está conectado (`ready === true`).
+  - Recepción de mensajes STOMP → `setPoints(bp.points)`.
+  - `sendPoint(x,y)` que llama `publishPoint(client, author, name, {x,y})`.
 
-```javascript
-// src/hooks/useCanvas.js
-import { useEffect, useRef, useState } from 'react'
-import { getBlueprint } from '../lib/blueprintApi.js'
-import { subscribeToBlueprint, publishPoint } from '../lib/stompClient.js'
-
-export function useCanvas(client, ready, author, name) {
-  const [points, setPoints] = useState([])
-  const subscriptionRef = useRef(null)
-  const loadIdRef       = useRef(0)
-
-  useEffect(() => {
-    if (!author || !name) return
-
-    // Cancela suscripción previa
-    subscriptionRef.current?.unsubscribe()
-    subscriptionRef.current = null
-
-    // Limpia canvas mientras carga
-    setPoints([])
-
-    const currentLoadId = ++loadIdRef.current
-
-    // Carga REST del estado inicial
-    getBlueprint(author, name)
-      .then((bp) => {
-        if (loadIdRef.current !== currentLoadId) return // respuesta stale
-        setPoints(bp.points ?? [])
-      })
-      .catch(console.error)
-
-    // Suscribe al topic STOMP si el cliente está listo
-    if (ready && client) {
-      subscriptionRef.current = subscribeToBlueprint(
-        client,
-        author,
-        name,
-        (bp) => {
-          // El servidor envía el Blueprint completo — fuente de verdad
-          setPoints(bp.points ?? [])
-        }
-      )
-    }
-
-    return () => {
-      subscriptionRef.current?.unsubscribe()
-      subscriptionRef.current = null
-    }
-  }, [client, ready, author, name])
-
-  // Envía el punto al servidor vía STOMP (no dibuja localmente)
-  function sendPoint(x, y) {
-    if (!ready || !client) return
-    publishPoint(client, author, name, { x, y })
-  }
-
-  return { points, sendPoint }
-}
-```
-
-Puntos clave:
-- `getBlueprint(author, name)` trae el estado persistido antes de subscribirse.
-- La suscripción STOMP reemplaza el estado local con la versión del servidor (evita conflictos y mantiene el servidor como fuente de verdad).
-- `sendPoint` publica a `/app/draw`; el servidor persiste y reenvía el blueprint actualizado.
+La separación REST vs STOMP:
+- REST: estado inicial y operaciones CRUD.
+- STOMP: sincronización incremental y colaborativa.
 
 ## Integración con la API REST
 
-El cliente combina REST y STOMP: REST para obtener estado inicial y operaciones CRUD, STOMP para sincronización en tiempo real.
+El cliente combina REST y STOMP: REST se usa para obtener el estado inicial y para operaciones CRUD; STOMP se usa para sincronización en tiempo real.
 
-Estos son los fragmentos principales del cliente HTTP (`src/lib/blueprintApi.js`) usado por los hooks:
+Endpoints backend:
 
-```javascript
-const BASE = `${import.meta.env.VITE_API_BASE ?? 'http://localhost:8080'}/api/v1/blueprints`
+- `GET /api/v1/blueprints/{author}` → lista de blueprints del autor. El frontend mapea cada elemento a `{ name, author, pointCount }` para la tabla del autor.
+- `GET /api/v1/blueprints/{author}/{name}` → blueprint completo con `points` (usado para poblar el canvas al seleccionar un plano).
+- `POST /api/v1/blueprints` → crear un blueprint nuevo. Payload: `{ author, name, points }`.
+- `PUT /api/v1/blueprints/{author}/{name}/points` → agrega un único punto al blueprint (este endpoint lo invoca el servidor cuando procesa un evento STOMP).
+- `DELETE /api/v1/blueprints/{author}/{name}` → elimina un blueprint.
 
-async function http(input, init) {
-  const res = await fetch(input, {
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  })
+Contrato de respuestas:
 
-  const body = await res.json() // ApiResponse<T>
+El backend devuelve un envoltorio `ApiResponse` con `{ status, message, data, timestamp }`. El módulo `src/lib/blueprintApi.js` centraliza las llamadas HTTP y extrae `data` antes de devolverla; además lanza `Error` cuando la respuesta HTTP no es `2xx`.
 
-  if (!res.ok) {
-    throw new Error(body.message ?? `HTTP ${res.status}`)
-  }
+Uso en los hooks del frontend:
 
-  return body.data
-}
-
-export async function getBlueprintsByAuthor(author) {
-  const blueprints = await http(`${BASE}/${encodeURIComponent(author)}`)
-  return blueprints.map(bp => ({
-    name:       bp.name,
-    author:     bp.author,
-    pointCount: bp.points?.length ?? 0,
-  }))
-}
-
-export async function getBlueprint(author, name) {
-  return http(`${BASE}/${encodeURIComponent(author)}/${encodeURIComponent(name)}`)
-}
-
-export async function createBlueprint(payload) {
-  return http(BASE, { method: 'POST', body: JSON.stringify(payload) })
-}
-
-export async function addPoint(author, name, point) {
-  return http(
-    `${BASE}/${encodeURIComponent(author)}/${encodeURIComponent(name)}/points`,
-    { method: 'PUT', body: JSON.stringify(point) }
-  )
-}
-
-export async function deleteBlueprint(author, name) {
-  return http(
-    `${BASE}/${encodeURIComponent(author)}/${encodeURIComponent(name)}`,
-    { method: 'DELETE' }
-  )
-}
-```
-- La función `http` extrae `data` del `ApiResponse` del backend y lanza errores con `body.message` cuando procede.
-- `getBlueprintsByAuthor` mapea los blueprints a una vista ligera para la tabla del autor (sin enviar puntos completos hasta que se soliciten).
-- `addPoint` es el endpoint que el servidor llama internamente cuando procesa un evento STOMP — el frontend no lo invoca directamente en el flujo colaborativo, sino que publica al broker y espera el eco.
-
+- `useBlueprints(author)` llama a `getBlueprintsByAuthor(author)` para poblar la tabla y calcular `totalPoints`. Las operaciones `create` y `remove` usan `createBlueprint` y `deleteBlueprint` y luego recargan la lista.
+- `useCanvas(client, ready, author, name)` invoca `getBlueprint(author, name)` al seleccionar un plano para obtener los puntos iniciales. Después se suscribe al topic STOMP correspondiente.
 
 ## Como probar y ejecutar
 
