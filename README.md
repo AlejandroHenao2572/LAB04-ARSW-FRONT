@@ -2,8 +2,12 @@
 
 - David Alejandro Patacon Henao
 
-[Implementacion STOMP](./docs/STOMP.md)
-[Implementacion SOCKETIO](./docs/SOCKETIO.md)
+[Implementacion STOMP](./docs/STOMP.md)  
+[Implementacion SOCKETIO](./docs/SOCKETIO.md)  
+### Link video demo:  
+https://www.youtube.com/watch?v=LapW_056EMY
+
+
 
 > **Repositorio:** `DECSIS-ECI/Lab_P4_BluePrints_RealTime-Sokets`  
 > **Front:** React + Vite (Canvas, CRUD, y selector de tecnología RT)  
